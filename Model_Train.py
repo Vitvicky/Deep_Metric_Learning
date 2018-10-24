@@ -25,7 +25,7 @@ def setup_logger(level=logging.DEBUG):
 def train(net, dataloader, criterion, optimizer):
     logger = logging.getLogger(__name__)
 
-    statistics_batch = len(dataloader) / 5
+    statistics_batch = len(dataloader) / 10
 
     cnn_loss = 0.0
     ddml_loss = 0.0
