@@ -3,11 +3,9 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch import tensor
 from torch.utils.data import Dataset
-from sklearn.preprocessing import normalize
 
-
-DATASET_PATH = "/home/wzy/Coding/Data/OnlineNews/ori/Guardian_short_stream.csv"
-PKL_PATH = "/home/wzy/PycharmProjects/DDML/pkl/ddml-guardian.pkl"
+DATASET_PATH = '/home/wzy/Coding/Data/mnist/ori/mnist-train.csv'
+PKL_PATH = "/home/wzy/PycharmProjects/DDML/pkl/ddml-mnist.pkl"
 
 
 class DDMLDataset(Dataset):
@@ -17,15 +15,14 @@ class DDMLDataset(Dataset):
 
     def __init__(self, dataset):
         """
+
         :param dataset: numpy.ndarray
         """
 
         self.data = []
 
-        normalize(dataset[:, :300], norm='l2', axis=1, copy=False)
-
         for s in dataset:
-            x = (tensor(s[:-1], dtype=torch.float))
+            x = (tensor(s[:-1], dtype=torch.float) / 255).view(-1, 28, 28)
             y = tensor(s[-1], dtype=torch.long)
             self.data.append((x, y))
 
@@ -40,8 +37,26 @@ class DDMLNet(nn.Module):
     def __init__(self, device, beta=1.0, tao=5.0, b=1.0, learning_rate=0.001):
         super(DDMLNet, self).__init__()
 
-        self.fc1 = nn.Linear(300, 200)
-        self.fc2 = nn.Linear(200, 100)
+        self.conv1 = nn.Sequential(
+            # [batch_size, 1, 28, 28]
+            nn.Conv2d(in_channels=1, out_channels=10, kernel_size=5, padding=2),
+            nn.ReLU(),
+            # [batch_size, 10, 28, 28]
+            nn.MaxPool2d(2, 2)
+        )
+        self.conv2 = nn.Sequential(
+            # [batch_size, 10, 14, 14]
+            nn.Conv2d(in_channels=10, out_channels=20, kernel_size=5, padding=2),
+            nn.ReLU(),
+            # [batch_size, 20, 14, 14]
+            nn.MaxPool2d(2, 2)
+        )
+
+        self.cnn_output_dim = 20 * 7 * 7
+
+        # [batch_size, 20, 7, 7]
+        self.fc1 = nn.Linear(self.cnn_output_dim, 500)
+        self.fc2 = nn.Linear(500, 100)
         self.fc3 = nn.Linear(100, 10)
 
         self.ddml_layers = [self.fc1, self.fc2]
@@ -57,7 +72,14 @@ class DDMLNet(nn.Module):
 
         self.to(device)
 
+    def cnn_forward(self, x):
+        x = self.conv1(x)
+        x = self.conv2(x)
+        x = x.view(-1, self.cnn_output_dim)
+        return x
+
     def ddml_forward(self, x):
+        x = self.cnn_forward(x)
         x = self._s(self.fc1(x))
         x = self._s(self.fc2(x))
         return x
@@ -79,6 +101,7 @@ class DDMLNet(nn.Module):
 
     def ddml_optimize(self, pairs):
         """
+
         :param pairs:
         :return: loss.
         """
@@ -103,8 +126,8 @@ class DDMLNet(nn.Module):
         h_j_m = [[0 for m in range(layer_count + 1)] for index in range(len(pairs))]
 
         for index, (si, sj) in enumerate(pairs):
-            xi = si[0].unsqueeze(0)
-            xj = sj[0].unsqueeze(0)
+            xi = self.cnn_forward(si[0].unsqueeze(0))
+            xj = self.cnn_forward(sj[0].unsqueeze(0))
             h_i_m[index][-1] = xi
             h_j_m[index][-1] = xj
             for m, layer in enumerate(self.ddml_layers):
@@ -206,3 +229,5 @@ class DDMLNet(nn.Module):
         """
         z = torch.tensor(z)
         return 1 - self._s(z) ** 2
+
+
